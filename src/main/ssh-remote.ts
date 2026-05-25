@@ -29,7 +29,7 @@ function buildExecArgs(config: SshConfig): string[] {
     "-o",
     "BatchMode=yes",
     "-o",
-    "StrictHostKeyChecking=accept-new",
+    "StrictHostKeyChecking=yes", // Security: require pre-enrolled host keys
     "-o",
     "ConnectTimeout=15",
     ...buildSshControlOptions(),
@@ -757,6 +757,14 @@ export async function sshSetEnvValue(
   value: string,
   profile?: string,
 ): Promise<void> {
+  // Security: Validate env entry to prevent injection
+  if (!/^[A-Z][A-Z0-9_]*$/.test(key)) {
+    throw new Error(`Invalid environment variable key: ${key}`);
+  }
+  if (value.includes('\n') || value.includes('\r') || value.includes('\0')) {
+    throw new Error('Environment variable values cannot contain newlines or null bytes');
+  }
+
   const envPath = remoteEnvPath(profile);
   const content = await sshReadFile(config, envPath);
 

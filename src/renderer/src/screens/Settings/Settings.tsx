@@ -780,7 +780,12 @@ function Settings({ profile }: { profile?: string }): React.JSX.Element {
                 className="settings-migration-desc"
                 dangerouslySetInnerHTML={{
                   __html: t("settings.migrationDesc", {
-                    path: openclawPath || "",
+                    path: (openclawPath || "")
+                      .replace(/&/g, "&amp;")
+                      .replace(/</g, "&lt;")
+                      .replace(/>/g, "&gt;")
+                      .replace(/"/g, "&quot;")
+                      .replace(/'/g, "&#039;"),
                   }),
                 }}
               />

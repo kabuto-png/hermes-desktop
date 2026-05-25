@@ -7,11 +7,9 @@ const POSTHOG_HOST =
 const ANALYTICS_CONSENT_KEY = "hermes-analytics-enabled";
 
 function isAnalyticsEnabled(): boolean {
-  // Default to true for official builds (key present), false otherwise
-  const hasKey = POSTHOG_KEY.length > 0;
   try {
     const stored = localStorage.getItem(ANALYTICS_CONSENT_KEY);
-    if (stored === null) return hasKey; // First run: enabled if key exists
+    if (stored === null) return false; // Privacy: require explicit opt-in for analytics
     return stored === "true";
   } catch {
     return false;

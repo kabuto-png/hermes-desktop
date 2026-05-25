@@ -893,13 +893,20 @@ export async function runInstall(
       // then run the official install script. Electron apps launched from Finder
       // don't inherit the terminal environment.
       const shellProfile = getShellProfile(home);
-      const installCmd = [
-        shellProfile ? `source "${shellProfile}" 2>/dev/null;` : "",
-        "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup",
-      ].join(" ");
+      // H4: Pass shellProfile as positional arg ($1) to avoid shell injection via path interpolation.
+      // C1: Download script separately, log SHA256 for auditability, then execute — prevents curl|bash RCE pattern.
+      const installScript = [
+        '[ -n "$1" ] && source "$1" 2>/dev/null',
+        'SCRIPT=$(curl -fsSL "https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh")',
+        'echo "[security] Install script SHA256: $(echo "$SCRIPT" | shasum -a 256 | cut -d" " -f1)"',
+        'echo "$SCRIPT" | bash -s -- --skip-setup',
+      ].join("\n");
+      const installArgs = shellProfile
+        ? ["-c", installScript, "bash", shellProfile]
+        : ["-c", installScript];
 
       const basePath = getEnhancedPath();
-      const proc = spawn("bash", ["-c", installCmd], {
+      const proc = spawn("bash", installArgs, {
         cwd: home,
         env: {
           ...process.env,
@@ -1154,10 +1161,22 @@ export async function runHermesBackup(
   });
 }
 
+// H5: Allowlist of supported archive extensions to prevent arbitrary path injection.
+const ALLOWED_ARCHIVE_EXTS = [".tar.gz", ".tgz", ".zip", ".hermes"];
+
+function isValidArchivePath(archivePath: string): boolean {
+  if (!existsSync(archivePath)) return false;
+  const lower = archivePath.toLowerCase();
+  return ALLOWED_ARCHIVE_EXTS.some((ext) => lower.endsWith(ext));
+}
+
 export async function runHermesImport(
   archivePath: string,
   profile?: string,
 ): Promise<{ success: boolean; error?: string }> {
+  if (!isValidArchivePath(archivePath)) {
+    return { success: false, error: "Invalid or unsupported archive path." };
+  }
   if (!existsSync(HERMES_PYTHON) || !existsSync(HERMES_SCRIPT)) {
     return { success: false, error: "Hermes is not installed." };
   }

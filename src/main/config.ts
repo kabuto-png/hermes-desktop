@@ -141,6 +141,21 @@ function invalidateCache(prefix: string): void {
   }
 }
 
+function maskSensitiveValue(value: string): string {
+  if (!value || value.length < 8) return '****';
+  return value.slice(0, 4) + '****' + value.slice(-4);
+}
+
+export function readEnvMasked(profile?: string): Record<string, string> {
+  const env = readEnv(profile);
+  return Object.fromEntries(
+    Object.entries(env).map(([key, value]) => {
+      const isSensitive = /KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i.test(key);
+      return [key, isSensitive ? maskSensitiveValue(value) : value];
+    })
+  );
+}
+
 export function readEnv(profile?: string): Record<string, string> {
   const cacheKey = `env:${profile || "default"}`;
   const cached = getCached<Record<string, string>>(cacheKey);

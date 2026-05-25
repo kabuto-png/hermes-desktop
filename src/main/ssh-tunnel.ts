@@ -112,7 +112,7 @@ function buildSshArgs(config: SshConfig, localPort: number): string[] {
     "-i",
     keyPath,
     "-o",
-    "StrictHostKeyChecking=accept-new",
+    "StrictHostKeyChecking=yes", // Security: require pre-enrolled host keys
     "-o",
     "BatchMode=yes",
     ...buildSshControlOptions(process.platform, { forTunnel: true }),

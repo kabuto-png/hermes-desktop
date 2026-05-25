@@ -875,6 +875,13 @@ function setupIPC(): void {
   // hands the file to the OS default handler (or a web URL to the browser),
   // "Save as…" writes a copy elsewhere. Labels are passed in from the
   // renderer so the menu honours the active UI locale.
+  const BLOCKED_EXTENSIONS = new Set(['.command', '.terminal', '.app', '.bat', '.exe', '.sh', '.ps1', '.cmd', '.vbs', '.js', '.scpt']);
+
+  function isBlockedPath(filePath: string): boolean {
+    const ext = require('path').extname(filePath).toLowerCase();
+    return BLOCKED_EXTENSIONS.has(ext);
+  }
+
   ipcMain.on(
     "show-media-menu",
     (
@@ -898,6 +905,10 @@ function setupIPC(): void {
             if (isUrl) {
               openExternalUrl(src);
             } else {
+              if (isBlockedPath(src)) {
+                console.error("[security] Blocked executable file open:", src);
+                return;
+              }
               shell.openPath(src).then((err) => {
                 if (err) console.error("[media] open failed:", err);
               });
@@ -1131,11 +1142,11 @@ function setupIPC(): void {
     if (conn.mode === "ssh" && conn.ssh) return sshListBundledSkills(conn.ssh);
     return listBundledSkills();
   });
-  ipcMain.handle("get-skill-content", (_event, skillPath: string) => {
+  ipcMain.handle("get-skill-content", (_event, skillPath: string, profile?: string) => {
     const conn = getConnectionConfig();
     if (conn.mode === "ssh" && conn.ssh)
       return sshGetSkillContent(conn.ssh, skillPath);
-    return getSkillContent(skillPath);
+    return getSkillContent(skillPath, profile);
   });
   ipcMain.handle(
     "install-skill",

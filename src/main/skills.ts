@@ -118,9 +118,29 @@ export function listInstalledSkills(profile?: string): InstalledSkill[] {
 }
 
 /**
- * Get the full content of a SKILL.md for the detail view.
+ * Validate that a path is within the allowed skills directory.
+ * Prevents path traversal attacks (e.g., "../../.env").
  */
-export function getSkillContent(skillPath: string): string {
+function isValidSkillPath(skillPath: string, profile?: string): boolean {
+  const skillsDir = join(profileHome(profile), "skills");
+  const resolved = join(skillPath); // normalize
+  // Must be within skills directory and not escape via ../
+  return (
+    resolved.startsWith(skillsDir + "/") || resolved.startsWith(skillsDir + "\\")
+  );
+}
+
+/**
+ * Get the full content of a SKILL.md for the detail view.
+ * Security: Validates path is within skills directory to prevent traversal.
+ */
+export function getSkillContent(skillPath: string, profile?: string): string {
+  // Security: Validate path is within skills directory
+  if (!isValidSkillPath(skillPath, profile)) {
+    console.error("[skills] Blocked path traversal attempt:", skillPath);
+    return "";
+  }
+
   const skillFile = join(skillPath, "SKILL.md");
   if (!existsSync(skillFile)) return "";
 
