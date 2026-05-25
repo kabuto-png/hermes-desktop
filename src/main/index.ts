@@ -81,7 +81,7 @@ import {
 } from "./claw3d";
 import { startOfficeStack } from "./office-start";
 import {
-  readEnv,
+  readEnvMasked,
   setEnvValue,
   getConfigValue,
   setConfigValue,
@@ -514,7 +514,7 @@ function setupIPC(): void {
   ipcMain.handle("get-env", (_event, profile?: string) => {
     const conn = getConnectionConfig();
     if (conn.mode === "ssh" && conn.ssh) return sshReadEnv(conn.ssh, profile);
-    return readEnv(profile);
+    return readEnvMasked(profile);
   });
 
   ipcMain.handle(

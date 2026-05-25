@@ -5,6 +5,8 @@ import {
   readdirSync,
   writeFileSync,
   unlinkSync,
+  lstatSync,
+  statSync,
 } from "fs";
 import { join, delimiter } from "path";
 import { homedir, tmpdir } from "os";
@@ -898,7 +900,18 @@ export async function runInstall(
       const installScript = [
         '[ -n "$1" ] && source "$1" 2>/dev/null',
         'SCRIPT=$(curl -fsSL "https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh")',
-        'echo "[security] Install script SHA256: $(echo "$SCRIPT" | shasum -a 256 | cut -d" " -f1)"',
+        'if [ -z "$SCRIPT" ]; then',
+        '  echo "[error] Failed to download install script"',
+        '  exit 1',
+        'fi',
+        'if command -v shasum >/dev/null 2>&1; then',
+        '  HASH=$(echo "$SCRIPT" | shasum -a 256 | cut -d" " -f1)',
+        'elif command -v sha256sum >/dev/null 2>&1; then',
+        '  HASH=$(echo "$SCRIPT" | sha256sum | cut -d" " -f1)',
+        'else',
+        '  HASH="unavailable"',
+        'fi',
+        'echo "[security] Install script SHA256: $HASH"',
         'echo "$SCRIPT" | bash -s -- --skip-setup',
       ].join("\n");
       const installArgs = shellProfile
@@ -1165,7 +1178,18 @@ export async function runHermesBackup(
 const ALLOWED_ARCHIVE_EXTS = [".tar.gz", ".tgz", ".zip", ".hermes"];
 
 function isValidArchivePath(archivePath: string): boolean {
-  if (!existsSync(archivePath)) return false;
+  try {
+    // Check for symlinks first; follow them but reject if target is not a regular file
+    const lstat = lstatSync(archivePath);
+    if (lstat.isSymbolicLink()) {
+      const stat = statSync(archivePath); // follows the symlink
+      if (!stat.isFile()) return false;
+    } else if (!lstat.isFile()) {
+      return false; // reject directories and other non-file types
+    }
+  } catch {
+    return false;
+  }
   const lower = archivePath.toLowerCase();
   return ALLOWED_ARCHIVE_EXTS.some((ext) => lower.endsWith(ext));
 }

@@ -765,6 +765,12 @@ export async function sshSetEnvValue(
     throw new Error('Environment variable values cannot contain newlines or null bytes');
   }
 
+  // Length limit (8KB max to prevent memory issues)
+  const MAX_ENV_VALUE_LENGTH = 8192;
+  if (value.length > MAX_ENV_VALUE_LENGTH) {
+    throw new Error(`Environment variable value exceeds maximum length of ${MAX_ENV_VALUE_LENGTH} bytes`);
+  }
+
   const envPath = remoteEnvPath(profile);
   const content = await sshReadFile(config, envPath);
 

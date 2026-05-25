@@ -1,5 +1,5 @@
 import { execFileSync } from "child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import {
@@ -123,10 +123,32 @@ export function listInstalledSkills(profile?: string): InstalledSkill[] {
  */
 function isValidSkillPath(skillPath: string, profile?: string): boolean {
   const skillsDir = join(profileHome(profile), "skills");
-  const resolved = join(skillPath); // normalize
-  // Must be within skills directory and not escape via ../
+
+  // Decode URL-encoded characters to prevent %2e%2e bypass
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(skillPath);
+  } catch {
+    return false; // Invalid encoding = reject
+  }
+
+  // Resolve symlinks to get real path
+  let resolved: string;
+  try {
+    resolved = realpathSync(join(decoded));
+  } catch {
+    return false; // Path doesn't exist or can't be resolved
+  }
+
+  let realSkillsDir: string;
+  try {
+    realSkillsDir = realpathSync(skillsDir);
+  } catch {
+    return false;
+  }
+
   return (
-    resolved.startsWith(skillsDir + "/") || resolved.startsWith(skillsDir + "\\")
+    resolved.startsWith(realSkillsDir + "/") || resolved.startsWith(realSkillsDir + "\\")
   );
 }
 
