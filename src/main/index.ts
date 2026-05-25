@@ -225,8 +225,19 @@ process.on("unhandledRejection", (reason) => {
   console.error("[MAIN UNHANDLED REJECTION]", reason);
 });
 
+function sanitizeErrorForUser(error: unknown): string {
+  const msg = error instanceof Error ? error.message : String(error);
+  return msg
+    .replace(/\/Users\/[^\s]+/g, '[path]')
+    .replace(/\/home\/[^\s]+/g, '[path]')
+    .replace(/C:\\[^\s]+/gi, '[path]')
+    .replace(/at .+:\d+:\d+/g, '')
+    .replace(/sk-[a-zA-Z0-9]+/g, '[key]')
+    .slice(0, 200) || 'An unexpected error occurred';
+}
+
 let mainWindow: BrowserWindow | null = null;
-let currentChatAbort: (() => void) | null = null;
+const chatAbortHandles = new Map<string, () => void>();
 
 function openExternalUrl(rawUrl: unknown): void {
   if (!isAllowedExternalUrl(rawUrl)) {
@@ -264,6 +275,28 @@ function createWindow(): void {
       webviewTag: true,
     },
   });
+
+  // CSP header injection to prevent XSS and code injection
+  const cspPolicy = [
+    "default-src 'self'",
+    is.dev ? "script-src 'self' 'unsafe-inline'" : "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "connect-src 'self' https: wss:",
+    "img-src 'self' data: https:",
+    "font-src 'self' data:",
+    "frame-src 'self' https:",
+  ].join("; ");
+
+  mainWindow.webContents.session.webRequest.onHeadersReceived(
+    (details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          "Content-Security-Policy": [cspPolicy],
+        },
+      });
+    },
+  );
 
   mainWindow.on("ready-to-show", () => {
     mainWindow!.show();
@@ -745,8 +778,10 @@ function setupIPC(): void {
         }
       }
 
-      if (currentChatAbort) {
-        currentChatAbort();
+      const existingAbort = chatAbortHandles.get(resumeSessionId || 'default');
+      if (existingAbort) {
+        existingAbort();
+        chatAbortHandles.delete(resumeSessionId || 'default');
       }
 
       let fullResponse = "";
@@ -780,10 +815,11 @@ function setupIPC(): void {
         {
           onChunk: (chunk) => {
             fullResponse += chunk;
-            if (!safeSend("chat-chunk", chunk) && currentChatAbort) {
+            const abortFn = chatAbortHandles.get(resumeSessionId || 'default');
+            if (!safeSend("chat-chunk", chunk) && abortFn) {
               // Renderer is gone — stop generating and resolve with what we
               // have so the awaiting promise doesn't leak.
-              currentChatAbort();
+              abortFn();
             }
           },
           onReasoningChunk: (chunk) => {
@@ -791,12 +827,13 @@ function setupIPC(): void {
             // the renderer can render the thinking bubble live during the
             // stream rather than waiting for a focus-change refresh (#352).
             // Same renderer-gone abort guard as the content channel.
-            if (!safeSend("chat-reasoning-chunk", chunk) && currentChatAbort) {
-              currentChatAbort();
+            const abortFn = chatAbortHandles.get(resumeSessionId || 'default');
+            if (!safeSend("chat-reasoning-chunk", chunk) && abortFn) {
+              abortFn();
             }
           },
           onDone: (sessionId) => {
-            currentChatAbort = null;
+            chatAbortHandles.delete(sessionId || resumeSessionId || 'default');
             safeSend("chat-done", sessionId || "");
             resolveChat({ response: fullResponse, sessionId });
             // Desktop notification when window is not focused and response took >10s
@@ -816,14 +853,14 @@ function setupIPC(): void {
             }
           },
           onError: (error) => {
-            currentChatAbort = null;
+            chatAbortHandles.delete(resumeSessionId || 'default');
             safeSend("chat-error", error);
             rejectChat(new Error(error));
             // Notify on error too if window not focused
             if (mainWindow && !mainWindow.isFocused()) {
               new Notification({
                 title: "Hermes Agent — Error",
-                body: error.slice(0, 100),
+                body: sanitizeErrorForUser(error),
               }).show();
             }
           },
@@ -841,15 +878,17 @@ function setupIPC(): void {
         contextFolder,
       );
 
-      currentChatAbort = handle.abort;
+      chatAbortHandles.set(resumeSessionId || 'default', handle.abort);
       return promise;
     },
   );
 
-  ipcMain.handle("abort-chat", () => {
-    if (currentChatAbort) {
-      currentChatAbort();
-      currentChatAbort = null;
+  ipcMain.handle("abort-chat", (_event, sessionId?: string) => {
+    const key = sessionId || 'default';
+    const abort = chatAbortHandles.get(key);
+    if (abort) {
+      abort();
+      chatAbortHandles.delete(key);
     }
   });
 
@@ -1738,10 +1777,10 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   stopHealthPolling();
-  if (currentChatAbort) {
-    currentChatAbort();
-    currentChatAbort = null;
+  for (const abort of chatAbortHandles.values()) {
+    abort();
   }
+  chatAbortHandles.clear();
   stopGateway();
   stopSshTunnel();
   stopClaw3d();

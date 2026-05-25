@@ -235,9 +235,14 @@ export function searchSessions(query: string, limit = 20): SearchResult[] {
 
     if (!tableCheck) return [];
 
-    // Sanitize query for FTS5: wrap each word with quotes for safety, add * for prefix
+    // Strip FTS5 boolean operators and special chars before quoting
+    const FTS_OPERATORS = /\b(AND|OR|NOT|NEAR)\b/gi;
+    const FTS_SPECIAL = /[*^$:]/g;
+
     const sanitized = query
       .trim()
+      .replace(FTS_OPERATORS, '')
+      .replace(FTS_SPECIAL, '')
       .split(/\s+/)
       .filter((w) => w.length > 0)
       .map((w) => `"${w.replace(/"/g, "")}"*`)

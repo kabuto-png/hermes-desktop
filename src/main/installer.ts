@@ -1242,6 +1242,24 @@ export async function runHermesImport(
 //  Debug dump
 // ────────────────────────────────────────────────────
 
+/** Redact sensitive values from hermes-dump output.
+ *  Matches env-var lines whose name contains KEY, SECRET, TOKEN, or PASSWORD,
+ *  replacing the value with [REDACTED].  Safe to call on any text — lines
+ *  that don't match are passed through unchanged.
+ */
+function redactSensitiveOutput(output: string): string {
+  return output
+    .split("\n")
+    .map((line) => {
+      // Match lines of the form: SOME_KEY_NAME=value  or  SOME_KEY_NAME: value
+      const m = line.match(
+        /^(\s*(?:[A-Za-z][A-Za-z0-9_]*_)?(?:KEY|SECRET|TOKEN|PASSWORD)(?:_[A-Za-z0-9_]*)?\s*[=:]\s*).+$/i,
+      );
+      return m ? `${m[1]}[REDACTED]` : line;
+    })
+    .join("\n");
+}
+
 export function runHermesDump(): Promise<string> {
   if (!existsSync(HERMES_PYTHON) || !existsSync(HERMES_SCRIPT)) {
     return Promise.resolve("Hermes is not installed.");
@@ -1264,9 +1282,9 @@ export function runHermesDump(): Promise<string> {
       },
       (error, stdout, stderr) => {
         if (error) {
-          resolve(stripAnsi(stderr || error.message));
+          resolve(redactSensitiveOutput(stripAnsi(stderr || error.message)));
         } else {
-          resolve(stripAnsi(stdout));
+          resolve(redactSensitiveOutput(stripAnsi(stdout)));
         }
       },
     );

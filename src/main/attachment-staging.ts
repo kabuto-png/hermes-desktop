@@ -45,6 +45,8 @@ function uniquePath(dir: string, filename: string): string {
   return join(dir, `${stem}_${Date.now()}${ext}`);
 }
 
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024; // 50MB
+
 /**
  * Write a base64-encoded attachment to the staging area and return the
  * absolute path.  Caller is the renderer (via IPC); we don't trust the
@@ -55,6 +57,12 @@ export function stageAttachment(
   filename: string,
   base64Bytes: string,
 ): string {
+  // Size check - base64 is ~33% larger than decoded
+  const estimatedSize = (base64Bytes.length * 3) / 4;
+  if (estimatedSize > MAX_ATTACHMENT_BYTES) {
+    throw new Error(`Attachment exceeds maximum size of 50MB`);
+  }
+
   const sessionSegment = sanitizeSegment(sessionId || "default", "default");
   const dir = join(STAGING_ROOT, sessionSegment);
   mkdirSync(dir, { recursive: true });

@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
+import { safeStorage } from "electron";
 import { HERMES_HOME, expectedEnvKeyForModel } from "./installer";
 import {
   escapeRegex,
@@ -10,6 +11,25 @@ import {
 } from "./utils";
 import { getYamlPath } from "./yaml-path";
 import { canonicalProviderBaseUrl } from "./provider-registry";
+
+function encryptApiKey(key: string): string {
+  if (!key) return '';
+  if (safeStorage.isEncryptionAvailable()) {
+    return safeStorage.encryptString(key).toString('base64');
+  }
+  return key; // plaintext fallback
+}
+
+function decryptApiKey(encrypted: string): string {
+  if (!encrypted) return '';
+  try {
+    if (safeStorage.isEncryptionAvailable() && encrypted.length > 0) {
+      const buf = Buffer.from(encrypted, 'base64');
+      return safeStorage.decryptString(buf);
+    }
+  } catch {}
+  return encrypted; // fallback to plaintext
+}
 
 // ── Connection Config (local / remote / ssh) ─────────────
 
@@ -69,7 +89,7 @@ export function getConnectionConfig(): ConnectionConfig {
   return {
     mode: (data.connectionMode as "local" | "remote" | "ssh") || "local",
     remoteUrl: (data.remoteUrl as string) || "",
-    apiKey: (data.remoteApiKey as string) || "",
+    apiKey: decryptApiKey((data.remoteApiKey as string) || ""),
     ssh: {
       host: (ssh.host as string) || "",
       port: (ssh.port as number) || 22,
@@ -96,7 +116,7 @@ export function setConnectionConfig(config: ConnectionConfig): void {
   const data = readDesktopConfig();
   data.connectionMode = config.mode;
   data.remoteUrl = config.remoteUrl;
-  data.remoteApiKey = config.apiKey;
+  data.remoteApiKey = encryptApiKey(config.apiKey);
   if (config.mode === "ssh") {
     data.sshConfig = config.ssh;
   }
@@ -1204,6 +1224,18 @@ export function getCredentialPool(
   const pool = store.credential_pool;
   if (!pool || typeof pool !== "object") return {};
   return pool as Record<string, CredentialEntry[]>;
+}
+
+export function getMaskedCredentialPool(profile?: string): Record<string, { count: number; hasCredentials: boolean }> {
+  const pool = getCredentialPool(profile);
+  const masked: Record<string, { count: number; hasCredentials: boolean }> = {};
+  for (const [provider, entries] of Object.entries(pool)) {
+    masked[provider] = {
+      count: entries.length,
+      hasCredentials: entries.some(e => e.api_key || e.access_token),
+    };
+  }
+  return masked;
 }
 
 export function setCredentialPool(

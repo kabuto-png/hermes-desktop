@@ -61,16 +61,20 @@ export function initAnalytics(): void {
     // https://posthog.com/tutorials/web-redact-properties#hiding-customer-ip-address
     respect_dnt: true,
     mask_personal_data_properties: true,
-    loaded: () => {
-      posthog.identify(getOrCreateAnonymousId(), {
-        app_version: window.electron?.process?.versions?.electron || "unknown",
-        platform: window.electron?.process?.platform || "unknown",
-        node_version: window.electron?.process?.versions?.node || "unknown",
-      });
-    },
   });
 
   initialized = true;
+}
+
+function identifyUser(): void {
+  if (!initialized) return;
+  try {
+    posthog.identify(getOrCreateAnonymousId(), {
+      app_version: window.electron?.process?.versions?.electron || "unknown",
+      platform: window.electron?.process?.platform || "unknown",
+      node_version: window.electron?.process?.versions?.node || "unknown",
+    });
+  } catch {}
 }
 
 export function capture(
@@ -107,14 +111,18 @@ export function setAnalyticsConsent(enabled: boolean): void {
     // ignore
   }
 
-  if (enabled && POSTHOG_KEY && !initialized) {
-    initAnalytics();
-  } else if (!enabled && initialized) {
+  if (enabled) {
+    if (POSTHOG_KEY && !initialized) {
+      initAnalytics();
+    }
+    try {
+      posthog.opt_in_capturing();
+      identifyUser(); // Only identify after explicit consent
+    } catch {}
+  } else if (initialized) {
     try {
       posthog.opt_out_capturing();
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
 }
 

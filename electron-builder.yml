@@ -13,6 +13,10 @@ asarUnpack:
   - resources/**
 win:
   executableName: hermes-agent
+  # sign: true
+  # certificateFile: ${WIN_CSC_LINK}
+  # certificatePassword: ${WIN_CSC_KEY_PASSWORD}
+  # publisherName: "Nous Research"
   target:
     - nsis
     - portable
@@ -36,7 +40,7 @@ mac:
     - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
   hardenedRuntime: true
-  gatekeeperAssess: false
+  gatekeeperAssess: true
   notarize: true
 dmg:
   artifactName: ${name}-${version}-${arch}.${ext}
@@ -63,3 +67,5 @@ publish:
   provider: github
   owner: fathah
   repo: hermes-desktop
+  publisherName:
+    - "Nous Research"
